@@ -1,18 +1,22 @@
+// src/pages/Dashboard.js
 import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "../supabase";
-import { MapContainer, TileLayer } from "react-leaflet";
+import { supabase } from "../supabase"; // <- ensure this path is correct (src/supabase.js)
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import "../styles/Dashboard.css";
 import L from "leaflet";
 
-// ✅ Fix Leaflet marker icons
+// Fix Leaflet marker icons for various bundlers
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
 function Dashboard() {
+  // core state (kept your existing variables)
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -21,12 +25,13 @@ function Dashboard() {
   const [load, setLoad] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // 🔹 New states for filtering/search
+  // new states (search/filter/map toggle + driver locations)
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [showAllMap, setShowAllMap] = useState(false);
+  const [driverLocations, setDriverLocations] = useState([]); // from driver_locations table
 
-  // 🔹 Get current user
+  // ---------- get current user ----------
   useEffect(() => {
     async function getUser() {
       const { data } = await supabase.auth.getUser();
@@ -36,7 +41,7 @@ function Dashboard() {
     getUser();
   }, []);
 
-  // 🔹 Fetch profile
+  // ---------- fetch profile ----------
   useEffect(() => {
     if (!user) return;
     async function fetchProfile() {
@@ -52,7 +57,7 @@ function Dashboard() {
     fetchProfile();
   }, [user]);
 
-  // 🔹 Fetch bookings
+  // ---------- fetch bookings (unchanged logic, uses booking_with_details view) ----------
   const fetchBookings = useCallback(async () => {
     if (!profile) return;
 
@@ -66,29 +71,103 @@ function Dashboard() {
 
     const { data, error } = await query.order("created_at", { ascending: false });
 
-    if (error) console.error("Error fetching bookings:", error.message);
-    else setBookings(data || []);
+    if (error) {
+      console.error("Error fetching bookings:", error.message);
+    } else {
+      setBookings(data || []);
+    }
   }, [profile, user]);
 
   useEffect(() => {
     if (profile) fetchBookings();
   }, [profile, fetchBookings]);
 
-  // 🔄 Real-time updates
+  // realtime subscription for bookings (keeps your existing realtime)
   useEffect(() => {
     if (!profile) return;
     const channel = supabase
       .channel("bookings-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => fetchBookings())
+      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () =>
+        fetchBookings()
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
   }, [profile, fetchBookings]);
 
-  // 🧾 Create booking
+  // ---------- Driver locations: fetch & realtime ----------
+  const fetchDriverLocations = useCallback(async () => {
+    // select driver_locations and include profile name/phone if available
+    // adjust profile fields (phone / phone_number) based on your schema; trying 'phone' first
+    const { data, error } = await supabase
+      .from("driver_locations")
+      .select("id, driver_id, latitude, longitude, updated_at, profiles(full_name, phone)");
+
+    if (error) {
+      console.error("Error fetching driver locations:", error.message);
+    } else {
+      setDriverLocations(data || []);
+    }
+  }, []);
+
+  useEffect(() => {
+    // initial fetch
+    fetchDriverLocations();
+
+    // realtime for driver_locations
+    const channel = supabase
+      .channel("driver-locations-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "driver_locations" },
+        () => fetchDriverLocations()
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [fetchDriverLocations]);
+
+  // ---------- if logged-in user is a driver -> auto-update their location ----------
+  useEffect(() => {
+    if (!profile || profile.role !== "Driver") return;
+
+    let cancelled = false;
+    async function updateDriverLocationOnce() {
+      if (!navigator.geolocation) return console.warn("Geolocation not available");
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        if (cancelled) return;
+        const { latitude, longitude } = pos.coords;
+        // upsert the location (onConflict driver_id)
+        const { error } = await supabase
+          .from("driver_locations")
+          .upsert(
+            {
+              driver_id: user.id,
+              latitude,
+              longitude,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: ["driver_id"] }
+          );
+        if (error) console.error("Driver location upsert error:", error.message);
+      }, (err) => {
+        console.warn("Geolocation error:", err.message);
+      });
+    }
+
+    // run immediately and then every 30s
+    updateDriverLocationOnce();
+    const interval = setInterval(updateDriverLocationOnce, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [profile, user]);
+
+  // ---------- create booking (Customer) ----------
   async function createBooking(e) {
     e.preventDefault();
-    if (profile.role !== "Customer") return alert("Only customers can create bookings.");
+    if (!profile || profile.role !== "Customer") return alert("Only customers can create bookings.");
 
     const { error } = await supabase.from("bookings").insert([
       {
@@ -110,7 +189,7 @@ function Dashboard() {
     }
   }
 
-  // 🚚 Accept booking
+  // ---------- accept & complete booking ----------
   async function acceptBooking(id) {
     const { error } = await supabase
       .from("bookings")
@@ -121,24 +200,27 @@ function Dashboard() {
     else fetchBookings();
   }
 
-  // ✅ Mark completed
   async function completeBooking(id) {
     const { error } = await supabase.from("bookings").update({ status: "Completed" }).eq("id", id);
     if (error) alert("❌ " + error.message);
     else fetchBookings();
   }
 
-  // 📞 Contact helpers
-  const handleCall = (num) => window.open(`tel:${num}`, "_self");
+  // ---------- contact helpers ----------
+  const handleCall = (num) => {
+    if (!num) return alert("No contact number available");
+    window.open(`tel:${num}`, "_self");
+  };
   const handleWhatsApp = (num, name) => {
+    if (!num) return alert("No contact number available");
     const msg = encodeURIComponent(`Hello ${name}, this is from Trucky 🚛`);
     window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
   };
 
-  // 🗺️ Get city coordinates (OpenStreetMap API)
+  // ---------- geocoding helper ----------
   async function getCoordinates(city) {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${city}`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(city)}`);
       const data = await res.json();
       if (data && data.length > 0) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
       return null;
@@ -148,22 +230,22 @@ function Dashboard() {
     }
   }
 
+  // ---------- UI states ----------
   if (loading) return <p>Loading...</p>;
   if (!user) return <p>Please log in</p>;
   if (!profile) return <p>Loading profile...</p>;
 
-  // 🔹 Filtered bookings
+  // ---------- filtered bookings (same logic) ----------
   const filteredBookings = bookings.filter((b) => {
     const matchesSearch =
-      b.from_city.toLowerCase().includes(search.toLowerCase()) ||
-      b.to_city.toLowerCase().includes(search.toLowerCase()) ||
-      b.load.toLowerCase().includes(search.toLowerCase());
+      (b.from_city || "").toLowerCase().includes(search.toLowerCase()) ||
+      (b.to_city || "").toLowerCase().includes(search.toLowerCase()) ||
+      (b.load || "").toLowerCase().includes(search.toLowerCase());
 
     const matchesStatus = statusFilter === "All" || b.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  // 🔹 Analytics summary
   const total = bookings.length;
   const pending = bookings.filter((b) => b.status === "Pending").length;
   const accepted = bookings.filter((b) => b.status === "Accepted").length;
@@ -176,7 +258,7 @@ function Dashboard() {
         Welcome, <b>{profile.full_name}</b> ({profile.role})
       </p>
 
-      {/* 🔹 Analytics */}
+      {/* Analytics */}
       <div style={{ marginTop: "15px", marginBottom: "20px" }}>
         <b>📊 Summary:</b>
         <p>
@@ -184,7 +266,7 @@ function Dashboard() {
         </p>
       </div>
 
-      {/* 🔹 Search and Filters */}
+      {/* Search & filters */}
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
         <input
           type="text"
@@ -203,7 +285,7 @@ function Dashboard() {
         </button>
       </div>
 
-      {/* 🧾 Booking Form for Customers */}
+      {/* Customer booking form (unchanged) */}
       {profile.role === "Customer" && (
         <form
           onSubmit={createBooking}
@@ -240,34 +322,32 @@ function Dashboard() {
         </form>
       )}
 
-      {/* 🌍 All Bookings Map */}
-      {showAllMap && filteredBookings.length > 0 && (
+      {/* Show all drivers on a single map when toggled */}
+      {showAllMap && driverLocations.length > 0 && (
         <MapContainer
           center={[20.5937, 78.9629]}
           zoom={4}
-          style={{ height: "300px", width: "100%", marginTop: "20px" }}
-          whenCreated={async (map) => {
-            const markers = [];
-            for (const b of filteredBookings) {
-              const from = await getCoordinates(b.from_city);
-              const to = await getCoordinates(b.to_city);
-              if (from) markers.push(L.marker(from).addTo(map).bindPopup(`📍 From: ${b.from_city}`));
-              if (to) markers.push(L.marker(to).addTo(map).bindPopup(`🏁 To: ${b.to_city}`));
-            }
-            if (markers.length > 0) {
-              const group = L.featureGroup(markers);
-              map.fitBounds(group.getBounds(), { padding: [50, 50] });
-            }
-          }}
+          style={{ height: "350px", width: "100%", marginTop: "20px" }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            attribution='&copy; OpenStreetMap contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {driverLocations.map((d) => (
+            <Marker key={d.id} position={[d.latitude, d.longitude]}>
+              <Popup>
+                🚚 <b>{d.profiles?.full_name || "Driver"}</b>
+                <br />
+                📍 {d.latitude.toFixed(4)}, {d.longitude.toFixed(4)}
+                <br />
+                ⏱ {new Date(d.updated_at).toLocaleString()}
+              </Popup>
+            </Marker>
+          ))}
         </MapContainer>
       )}
 
-      {/* 📋 Bookings List */}
+      {/* Bookings list (unchanged UI & per-booking maps) */}
       <h3 style={{ marginTop: "40px" }}>📦 Bookings</h3>
       {filteredBookings.length === 0 && <p>No bookings found.</p>}
 
@@ -280,11 +360,7 @@ function Dashboard() {
             padding: "10px",
             marginBottom: "20px",
             backgroundColor:
-              b.status === "Completed"
-                ? "#e0ffe0"
-                : b.status === "Accepted"
-                ? "#fff7cc"
-                : "#ffeaea",
+              b.status === "Completed" ? "#e0ffe0" : b.status === "Accepted" ? "#fff7cc" : "#ffeaea",
           }}
         >
           <b>
@@ -296,19 +372,17 @@ function Dashboard() {
           🕒 Status: <b>{b.status}</b>
           <br />
 
-          {/* 👤 Customer details for Driver */}
+          {/* Customer details for driver */}
           {profile.role === "Driver" && b.status === "Accepted" && b.customer_full_name && (
             <div style={{ marginTop: "8px" }}>
               👤 <b>Customer:</b> {b.customer_full_name} ({b.customer_contact})
               <br />
               <button onClick={() => handleCall(b.customer_contact)}>📞 Call</button>{" "}
-              <button onClick={() => handleWhatsApp(b.customer_contact, b.customer_full_name)}>
-                💬 WhatsApp
-              </button>
+              <button onClick={() => handleWhatsApp(b.customer_contact, b.customer_full_name)}>💬 WhatsApp</button>
             </div>
           )}
 
-          {/* 🚚 Driver details for Customer */}
+          {/* Driver details for customer */}
           {profile.role === "Customer" && b.status === "Accepted" && b.driver_full_name && (
             <div style={{ marginTop: "8px" }}>
               🚚 <b>Driver:</b> {b.driver_full_name} ({b.driver_contact})
@@ -318,13 +392,11 @@ function Dashboard() {
               🚛 Vehicle: {b.vehicle_number} ({b.vehicle_capacity} tons)
               <br />
               <button onClick={() => handleCall(b.driver_contact)}>📞 Call</button>{" "}
-              <button onClick={() => handleWhatsApp(b.driver_contact, b.driver_full_name)}>
-                💬 WhatsApp
-              </button>
+              <button onClick={() => handleWhatsApp(b.driver_contact, b.driver_full_name)}>💬 WhatsApp</button>
             </div>
           )}
 
-          {/* 🗺️ Map View for each booking */}
+          {/* Per-booking map (unchanged) */}
           <MapContainer
             center={[20.5937, 78.9629]}
             zoom={5}
@@ -333,27 +405,19 @@ function Dashboard() {
               const fromCoords = await getCoordinates(b.from_city);
               const toCoords = await getCoordinates(b.to_city);
 
-              if (fromCoords)
-                L.marker(fromCoords).addTo(map).bindPopup(`📍 From: ${b.from_city}`);
-              if (toCoords)
-                L.marker(toCoords).addTo(map).bindPopup(`🏁 To: ${b.to_city}`);
+              if (fromCoords) L.marker(fromCoords).addTo(map).bindPopup(`📍 From: ${b.from_city}`);
+              if (toCoords) L.marker(toCoords).addTo(map).bindPopup(`🏁 To: ${b.to_city}`);
 
               if (fromCoords && toCoords) {
-                const group = L.featureGroup([
-                  L.marker(fromCoords),
-                  L.marker(toCoords),
-                ]);
+                const group = L.featureGroup([L.marker(fromCoords), L.marker(toCoords)]);
                 map.fitBounds(group.getBounds(), { padding: [50, 50] });
               }
             }}
           >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           </MapContainer>
 
-          {/* 🎛 Actions */}
+          {/* Actions */}
           <div style={{ marginTop: "10px" }}>
             {profile.role === "Driver" && b.status === "Pending" && (
               <button onClick={() => acceptBooking(b.id)}>✅ Accept Booking</button>

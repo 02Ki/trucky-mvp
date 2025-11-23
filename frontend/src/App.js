@@ -1,27 +1,42 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
 import Auth from "./Auth";
 import Dashboard from "./pages/Dashboard";
-import Profile from "./profile"; // ✅ capitalized filename for consistency
+import Profile from "./profile";
 import Analytics from "./pages/Analytics";
+import LandingPage from "./pages/LandingPage";
+import "./styles/Navbar.css"; // ✅ New CSS file for navbar
+
+function Navbar() {
+  const location = useLocation();
+  const isLandingPage = location.pathname === "/";
+
+  return (
+    <nav className={`navbar ${isLandingPage ? "navbar-transparent" : ""}`}>
+      <div className="navbar-container">
+        <div className="navbar-logo">Trucky</div>
+        <div className="navbar-links">
+          <Link to="/">Home</Link>
+          <Link to="/dashboard">Dashboard</Link>
+          <Link to="/auth">Login / Signup</Link>
+          <Link to="/profile">Profile</Link>
+          <Link to="/analytics">Analytics</Link>
+        </div>
+      </div>
+    </nav>
+  );
+}
 
 function App() {
   return (
     <Router>
-      <nav style={{ textAlign: "center", marginTop: "20px" }}>
-        <Link to="/dashboard" style={{ marginRight: "15px" }}>Dashboard</Link>
-        <Link to="/auth" style={{ marginRight: "15px" }}>Login / Signup</Link>
-        <Link to="/profile" style={{ marginRight: "15px" }}>Profile</Link>
-        {/* ✅ Added Analytics link below */}
-        <Link to="/analytics">Analytics</Link>
-      </nav>
-
+      <Navbar />
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/analytics" element={<Analytics />} />
-        <Route path="/" element={<Dashboard />} /> {/* ✅ Home route */}
       </Routes>
     </Router>
   );

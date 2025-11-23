@@ -1,0 +1,64 @@
+/* ===== TRUCKY NAVBAR (Blue + Orange Theme) ===== */
+
+.navbar {
+  background: linear-gradient(90deg, #1e3a8a, #f97316);
+  padding: 15px 30px;
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-transparent {
+  background: transparent;
+  box-shadow: none;
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
+}
+
+.navbar-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1200px;
+  margin: auto;
+}
+
+.navbar-logo {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.navbar-links {
+  display: flex;
+  gap: 25px;
+}
+
+.navbar-links a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.3s ease-in-out;
+}
+
+.navbar-links a:hover {
+  color: #ffb469;
+  text-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navbar-links {
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(30, 58, 138, 0.9);
+    padding: 10px;
+    border-radius: 10px;
+  }
+}

@@ -1,0 +1,154 @@
+/* ===== TRUCKY LANDING PAGE THEME (Blue + Orange) ===== */
+
+.landing-container {
+  font-family: 'Poppins', sans-serif;
+  color: #fff;
+  text-align: center;
+  background-color: #ffffff;
+  overflow-x: hidden;
+}
+
+/* HEADER / HERO */
+.landing-header {
+  position: relative;
+  background: url("//images/truck-blue.png") center center/cover no-repeat;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Gradient overlay */
+.gradient-overlay {
+  background: linear-gradient(135deg, rgba(30, 58, 138, 0.85), rgba(249, 115, 22, 0.85));
+}
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* HERO TEXT */
+.landing-text {
+  position: relative;
+  z-index: 2;
+  max-width: 700px;
+  padding: 20px;
+  color: #fff;
+  text-align: center;
+}
+
+.landing-title {
+  font-size: 3.2rem;
+  font-weight: 700;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+  margin-bottom: 15px;
+}
+
+.landing-title span {
+  color: #f97316; /* orange */
+  text-shadow: 0 0 10px rgba(249, 115, 22, 0.6);
+}
+
+.landing-subtitle {
+  font-size: 1.2rem;
+  color: #e5e7eb;
+  margin-bottom: 30px;
+}
+
+/* BUTTONS */
+.landing-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 12px 28px;
+  border-radius: 30px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: 0.3s ease-in-out;
+}
+
+.btn-primary {
+  background-color: #f97316; /* orange */
+  color: white;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);
+}
+
+.btn-primary:hover {
+  background-color: #fb923c;
+  transform: scale(1.05);
+}
+
+.btn-secondary {
+  border: 2px solid #ffffff;
+  color: white;
+  background: transparent;
+}
+
+.btn-secondary:hover {
+  background-color: #1e3a8a;
+  transform: scale(1.05);
+}
+
+/* IMAGES SECTION */
+.landing-content {
+  background-color: #ffffff;
+  padding: 60px 20px;
+}
+
+.landing-images {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.main-truck {
+  width: 400px;
+  max-width: 90%;
+  transition: transform 0.3s ease-in-out;
+}
+
+.ftl-image {
+  width: 250px;
+  max-width: 80%;
+  transition: transform 0.3s ease-in-out;
+}
+
+.main-truck:hover,
+.ftl-image:hover {
+  transform: scale(1.05);
+}
+
+/* FOOTER */
+.landing-footer {
+  background: linear-gradient(90deg, #1e3a8a, #f97316);
+  padding: 15px;
+  color: white;
+  font-size: 0.9rem;
+}
+
+/* RESPONSIVE */
+@media (max-width: 768px) {
+  .landing-title {
+    font-size: 2rem;
+  }
+  .landing-subtitle {
+    font-size: 1rem;
+  }
+  .landing-buttons {
+    flex-direction: column;
+    gap: 15px;
+  }
+}
