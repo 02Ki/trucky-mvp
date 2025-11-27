@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import Profile from "./profile";
 import Analytics from "./pages/Analytics";
 import LandingPage from "./pages/LandingPage";
+import OwnerDashboard from "./pages/OwnerDashboard";
 import "./styles/Navbar.css"; // ✅ New CSS file for navbar
 
 function Navbar() {
@@ -34,6 +35,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/owner" element={<OwnerDashboard />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/analytics" element={<Analytics />} />

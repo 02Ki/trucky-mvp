@@ -12,48 +12,61 @@ export default function Auth() {
   // Common fields
   const [phone, setPhone] = useState("");
 
-  // Driver-specific fields
+  // Driver fields
   const [drivingLicense, setDrivingLicense] = useState("");
   const [vehicleNumber, setVehicleNumber] = useState("");
   const [vehicleCapacity, setVehicleCapacity] = useState("");
 
-  // 🧠 Indian driving license regex: e.g. MH1420110023456
+  // Owner fields
+  const [companyName, setCompanyName] = useState("");
+  const [gstNumber, setGstNumber] = useState("");
+  const [truckCount, setTruckCount] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+
+  // Indian driving license validation
   const indianLicensePattern = /^[A-Z]{2}[0-9]{2}[0-9]{4}[0-9]{7}$/;
 
   const handleAuth = async () => {
     setMessage("");
 
     if (isLogin) {
-      // 🔐 LOGIN
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+
       if (error) setMessage("❌ " + error.message);
       else setMessage("✅ Logged in successfully!");
       return;
     }
 
-    // 🧾 SIGNUP
+    // SIGNUP VALIDATION
     if (!email || !password || !phone) {
-      setMessage("⚠️ Please fill all mandatory fields.");
+      setMessage("⚠️ Please fill all required fields.");
       return;
     }
 
+    // Driver validation
     if (role === "Driver") {
       if (!drivingLicense || !vehicleNumber || !vehicleCapacity) {
-        setMessage("⚠️ Please fill all driver details.");
+        setMessage("⚠️ Driver details missing.");
         return;
       }
-
       if (!indianLicensePattern.test(drivingLicense)) {
-        setMessage(
-          "⚠️ Invalid Indian driving license format. Example: MH1420110023456"
-        );
+        setMessage("⚠️ Invalid driving license format.");
         return;
       }
     }
 
+    // Owner validation
+    if (role === "Owner") {
+      if (!companyName || !gstNumber || !truckCount || !companyAddress) {
+        setMessage("⚠️ Owner details missing.");
+        return;
+      }
+    }
+
+    // CREATE USER
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -66,11 +79,11 @@ export default function Auth() {
 
     const user = data.user;
     if (!user) {
-      setMessage("✅ Signup successful. Please verify your email.");
+      setMessage("📧 Verify your email to continue.");
       return;
     }
 
-    // 🧩 Prepare profile data
+    // PROFILE INSERT
     const profileData = {
       id: user.id,
       full_name: email.split("@")[0],
@@ -78,121 +91,136 @@ export default function Auth() {
       phone_number: phone,
     };
 
+    // DRIVER fields
     if (role === "Driver") {
       profileData.driving_license = drivingLicense;
       profileData.vehicle_number = vehicleNumber;
       profileData.vehicle_capacity = vehicleCapacity;
     }
 
-    // 💾 Insert into Supabase profiles
+    // OWNER fields
+    if (role === "Owner") {
+      profileData.company_name = companyName;
+      profileData.gst_number = gstNumber;
+      profileData.truck_count = truckCount;
+      profileData.company_address = companyAddress;
+    }
+
     const { error: insertError } = await supabase
       .from("profiles")
       .insert([profileData]);
 
     if (insertError) {
       setMessage("❌ " + insertError.message);
-    } else {
-      setMessage("✅ Signup successful! You can log in now.");
-      // clear fields
-      setEmail("");
-      setPassword("");
-      setPhone("");
-      setDrivingLicense("");
-      setVehicleNumber("");
-      setVehicleCapacity("");
-      setRole("Customer");
-      setIsLogin(true);
+      return;
     }
+
+    setMessage("✅ Signup successful! Please log in now.");
+
+    // CLEAR ALL
+    setEmail("");
+    setPassword("");
+    setPhone("");
+    setDrivingLicense("");
+    setVehicleNumber("");
+    setVehicleCapacity("");
+    setCompanyName("");
+    setGstNumber("");
+    setTruckCount("");
+    setCompanyAddress("");
+
+    setRole("Customer");
+    setIsLogin(true);
   };
 
   return (
-    <div style={{ textAlign: "center", marginTop: "40px" }}>
+    <div className="auth-container">
       <h2>{isLogin ? "Login" : "Sign Up"} to Trucky</h2>
 
-      {/* Email */}
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
+      <input type="email" placeholder="Email"
+        value={email} onChange={(e) => setEmail(e.target.value)}
       />
-      <br /><br />
-
-      {/* Password */}
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
+      <input type="password" placeholder="Password"
+        value={password} onChange={(e) => setPassword(e.target.value)}
       />
-      <br /><br />
 
-      {/* Role selection */}
       {!isLogin && (
         <>
-          <label><strong>Sign up as:</strong></label>{" "}
+          {/* Role selector */}
+          <label>Sign up as:</label>
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="Customer">Customer</option>
             <option value="Driver">Driver</option>
+            <option value="Owner">Owner</option>
           </select>
-          <br /><br />
 
-          {/* Common: phone number */}
-          <input
-            type="text"
-            placeholder="Phone Number"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            required
+          {/* Common phone field */}
+          <input type="text" placeholder="Phone Number"
+            value={phone} onChange={(e) => setPhone(e.target.value)}
           />
-          <br /><br />
 
-          {/* Driver fields */}
+          {/* DRIVER FIELDS */}
           {role === "Driver" && (
             <>
-              <input
-                type="text"
-                placeholder="Driving License (e.g. MH1420110023456)"
+              <input type="text" placeholder="Driving License"
                 value={drivingLicense}
-                onChange={(e) => setDrivingLicense(e.target.value.toUpperCase())}
-                required
+                onChange={(e) =>
+                  setDrivingLicense(e.target.value.toUpperCase())
+                }
               />
-              <br /><br />
 
-              <input
-                type="text"
-                placeholder="Vehicle Number"
+              <input type="text" placeholder="Vehicle Number"
                 value={vehicleNumber}
-                onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
-                required
+                onChange={(e) =>
+                  setVehicleNumber(e.target.value.toUpperCase())
+                }
               />
-              <br /><br />
 
-              <input
-                type="text"
-                placeholder="Vehicle Capacity (in tons)"
+              <input type="text" placeholder="Vehicle Capacity (tons)"
                 value={vehicleCapacity}
                 onChange={(e) => setVehicleCapacity(e.target.value)}
-                required
               />
-              <br /><br />
+            </>
+          )}
+
+          {/* OWNER FIELDS */}
+          {role === "Owner" && (
+            <>
+              <input type="text" placeholder="Company Name"
+                value={companyName} onChange={(e) => setCompanyName(e.target.value)}
+              />
+
+              <input type="text" placeholder="GST Number"
+                value={gstNumber} onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
+              />
+
+              <input type="number" placeholder="Number of Trucks"
+                value={truckCount} onChange={(e) => setTruckCount(e.target.value)}
+              />
+
+              <textarea
+                placeholder="Company Address"
+                value={companyAddress}
+                onChange={(e) => setCompanyAddress(e.target.value)}
+              />
             </>
           )}
         </>
       )}
 
-      {/* Submit Button */}
       <button onClick={handleAuth}>
         {isLogin ? "Login" : "Sign Up"}
       </button>
 
-      <p style={{ color: message.startsWith("❌") ? "red" : "green" }}>
-        {message}
-      </p>
+      {message && (
+        <p className={message.startsWith("❌") ? "error" : "success"}>
+          {message}
+        </p>
+      )}
 
       <p>
-        {isLogin ? "Don't have an account?" : "Already registered?"}{" "}
-        <button onClick={() => setIsLogin(!isLogin)}>
+        {isLogin ? "Don't have an account?" : "Already registered?"}
+        <button className="switch-btn" onClick={() => setIsLogin(!isLogin)}>
           {isLogin ? "Sign Up" : "Login"}
         </button>
       </p>

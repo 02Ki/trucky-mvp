@@ -1,9 +1,10 @@
 // src/pages/Dashboard.js
 import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "../supabase"; // <- ensure this path is correct (src/supabase.js)
+import { supabase } from "../supabase";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "../styles/Dashboard.css";
+import OwnerDashboard from "./OwnerDashboard";
 import L from "leaflet";
 
 // Fix Leaflet marker icons for various bundlers
@@ -18,7 +19,7 @@ L.Icon.Default.mergeOptions({
 function Dashboard() {
   // core state (kept your existing variables)
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profile, setProfile] = useState(null); // will hold profile OR synthesized owner object
   const [bookings, setBookings] = useState([]);
   const [fromCity, setFromCity] = useState("");
   const [toCity, setToCity] = useState("");
@@ -34,47 +35,106 @@ function Dashboard() {
   // ---------- get current user ----------
   useEffect(() => {
     async function getUser() {
-      const { data } = await supabase.auth.getUser();
-      setUser(data?.user || null);
-      setLoading(false);
+      try {
+        const { data } = await supabase.auth.getUser();
+        setUser(data?.user || null);
+      } catch (err) {
+        console.error("getUser error:", err);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     }
     getUser();
   }, []);
 
-  // ---------- fetch profile ----------
+  // ---------- fetch profile OR owner ----------
   useEffect(() => {
     if (!user) return;
-    async function fetchProfile() {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
+    let mounted = true;
 
-      if (error) console.error("Profile error:", error.message);
-      else setProfile(data);
+    async function fetchProfileOrOwner() {
+      try {
+        // Try profiles table first (customers & drivers)
+        const { data: profData, error: profErr } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+
+        if (profErr && profErr.code !== "PGRST116") {
+          // log non-not-found errors (PGRST116 may be "No rows" depending on PG client)
+          console.warn("profiles fetch warning:", profErr.message || profErr);
+        }
+
+        if (profData) {
+          if (mounted) setProfile(profData);
+          return;
+        }
+
+        // If not found in profiles, check owners table
+        // If found in owners table
+const { data: ownerData, error: ownerErr } = await supabase
+  .from("owners")
+  .select("*")
+  .eq("id", user.id)
+  .single();
+
+if (ownerErr && ownerErr.code !== "PGRST116") {
+  console.warn("owners fetch warning:", ownerErr.message || ownerErr);
+}
+
+if (ownerData) {
+  const ownerProfile = {
+    ...ownerData,
+    role: "Owner",
+    total_trucks: ownerData.total_trucks || 0,  // <-- FIX HERE
+  };
+
+  if (mounted) setProfile(ownerProfile);
+  return;
+}
+
+
+        // If neither found, set profile null (user exists but no profile/owner record)
+        if (mounted) setProfile(null);
+      } catch (err) {
+        console.error("fetchProfileOrOwner error:", err);
+        if (mounted) setProfile(null);
+      }
     }
-    fetchProfile();
+
+    fetchProfileOrOwner();
+    return () => {
+      mounted = false;
+    };
   }, [user]);
 
   // ---------- fetch bookings (unchanged logic, uses booking_with_details view) ----------
   const fetchBookings = useCallback(async () => {
     if (!profile) return;
 
-    let query = supabase.from("booking_with_details").select("*");
+    try {
+      let query = supabase.from("booking_with_details").select("*");
 
-    if (profile.role === "Customer") {
-      query = query.eq("customer_id", user.id);
-    } else if (profile.role === "Driver") {
-      query = query.or(`status.eq.Pending,driver_id.eq.${user.id}`);
-    }
+      if (profile.role === "Customer") {
+        query = query.eq("customer_id", user.id);
+      } else if (profile.role === "Driver") {
+        query = query.or(`status.eq.Pending,driver_id.eq.${user.id}`);
+      } else {
+        // owners don't use bookings list here (Owner has separate dashboard)
+        return;
+      }
 
-    const { data, error } = await query.order("created_at", { ascending: false });
+      const { data, error } = await query.order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching bookings:", error.message);
-    } else {
-      setBookings(data || []);
+      if (error) {
+        console.error("Error fetching bookings:", error.message);
+      } else {
+        setBookings(data || []);
+      }
+    } catch (err) {
+      console.error("fetchBookings error:", err);
     }
   }, [profile, user]);
 
@@ -85,6 +145,9 @@ function Dashboard() {
   // realtime subscription for bookings (keeps your existing realtime)
   useEffect(() => {
     if (!profile) return;
+    // only subscribe if user role is Customer or Driver
+    if (profile.role !== "Customer" && profile.role !== "Driver") return;
+
     const channel = supabase
       .channel("bookings-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () =>
@@ -97,16 +160,20 @@ function Dashboard() {
 
   // ---------- Driver locations: fetch & realtime ----------
   const fetchDriverLocations = useCallback(async () => {
-    // select driver_locations and include profile name/phone if available
-    // adjust profile fields (phone / phone_number) based on your schema; trying 'phone' first
-    const { data, error } = await supabase
-      .from("driver_locations")
-      .select("id, driver_id, latitude, longitude, updated_at, profiles(full_name, phone)");
+    try {
+      const { data, error } = await supabase
+        .from("driver_locations")
+        .select("id, driver_id, latitude, longitude, updated_at, profiles(full_name, phone)")
+        .order("updated_at", { ascending: false })
+        .limit(500);
 
-    if (error) {
-      console.error("Error fetching driver locations:", error.message);
-    } else {
-      setDriverLocations(data || []);
+      if (error) {
+        console.error("Error fetching driver locations:", error.message);
+      } else {
+        setDriverLocations(data || []);
+      }
+    } catch (err) {
+      console.error("fetchDriverLocations error:", err);
     }
   }, []);
 
@@ -137,19 +204,22 @@ function Dashboard() {
       navigator.geolocation.getCurrentPosition(async (pos) => {
         if (cancelled) return;
         const { latitude, longitude } = pos.coords;
-        // upsert the location (onConflict driver_id)
-        const { error } = await supabase
-          .from("driver_locations")
-          .upsert(
-            {
-              driver_id: user.id,
-              latitude,
-              longitude,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: ["driver_id"] }
-          );
-        if (error) console.error("Driver location upsert error:", error.message);
+        try {
+          const { error } = await supabase
+            .from("driver_locations")
+            .upsert(
+              {
+                driver_id: user.id,
+                latitude,
+                longitude,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: ["driver_id"] }
+            );
+          if (error) console.error("Driver location upsert error:", error.message);
+        } catch (err) {
+          console.error("updateDriverLocationOnce error:", err);
+        }
       }, (err) => {
         console.warn("Geolocation error:", err.message);
       });
@@ -230,10 +300,22 @@ function Dashboard() {
     }
   }
 
+  // utility: find driver location item by driver_id
+  function findDriverLocById(driverId) {
+    if (!driverId) return null;
+    return driverLocations.find((d) => String(d.driver_id) === String(driverId)) || null;
+  }
+
   // ---------- UI states ----------
   if (loading) return <p>Loading...</p>;
   if (!user) return <p>Please log in</p>;
   if (!profile) return <p>Loading profile...</p>;
+
+  // If user is owner, redirect to owner dashboard component
+  if (profile.role === "Owner") {
+    // pass owner object so OwnerDashboard doesn't re-query owners if you prefer that
+    return <OwnerDashboard owner={profile} />;
+  }
 
   // ---------- filtered bookings (same logic) ----------
   const filteredBookings = bookings.filter((b) => {
@@ -334,11 +416,14 @@ function Dashboard() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           {driverLocations.map((d) => (
-            <Marker key={d.id} position={[d.latitude, d.longitude]}>
+            <Marker
+              key={d.id}
+              position={[d.latitude, d.longitude]}
+            >
               <Popup>
                 🚚 <b>{d.profiles?.full_name || "Driver"}</b>
                 <br />
-                📍 {d.latitude.toFixed(4)}, {d.longitude.toFixed(4)}
+                📍 {Number(d.latitude).toFixed(4)}, {Number(d.longitude).toFixed(4)}
                 <br />
                 ⏱ {new Date(d.updated_at).toLocaleString()}
               </Popup>
@@ -351,83 +436,98 @@ function Dashboard() {
       <h3 style={{ marginTop: "40px" }}>📦 Bookings</h3>
       {filteredBookings.length === 0 && <p>No bookings found.</p>}
 
-      {filteredBookings.map((b, i) => (
-        <div
-          key={b.id || i}
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: "10px",
-            padding: "10px",
-            marginBottom: "20px",
-            backgroundColor:
-              b.status === "Completed" ? "#e0ffe0" : b.status === "Accepted" ? "#fff7cc" : "#ffeaea",
-          }}
-        >
-          <b>
-            {b.from_city} ➡ {b.to_city}
-          </b>
-          <br />
-          🏷️ Load: {b.load}
-          <br />
-          🕒 Status: <b>{b.status}</b>
-          <br />
+      {filteredBookings.map((b, i) => {
+        const driverLoc = findDriverLocById(b.driver_id);
 
-          {/* Customer details for driver */}
-          {profile.role === "Driver" && b.status === "Accepted" && b.customer_full_name && (
-            <div style={{ marginTop: "8px" }}>
-              👤 <b>Customer:</b> {b.customer_full_name} ({b.customer_contact})
-              <br />
-              <button onClick={() => handleCall(b.customer_contact)}>📞 Call</button>{" "}
-              <button onClick={() => handleWhatsApp(b.customer_contact, b.customer_full_name)}>💬 WhatsApp</button>
-            </div>
-          )}
-
-          {/* Driver details for customer */}
-          {profile.role === "Customer" && b.status === "Accepted" && b.driver_full_name && (
-            <div style={{ marginTop: "8px" }}>
-              🚚 <b>Driver:</b> {b.driver_full_name} ({b.driver_contact})
-              <br />
-              🪪 License: {b.license_number}
-              <br />
-              🚛 Vehicle: {b.vehicle_number} ({b.vehicle_capacity} tons)
-              <br />
-              <button onClick={() => handleCall(b.driver_contact)}>📞 Call</button>{" "}
-              <button onClick={() => handleWhatsApp(b.driver_contact, b.driver_full_name)}>💬 WhatsApp</button>
-            </div>
-          )}
-
-          {/* Per-booking map (unchanged) */}
-          <MapContainer
-            center={[20.5937, 78.9629]}
-            zoom={5}
-            style={{ height: "250px", width: "100%", marginTop: "10px" }}
-            whenCreated={async (map) => {
-              const fromCoords = await getCoordinates(b.from_city);
-              const toCoords = await getCoordinates(b.to_city);
-
-              if (fromCoords) L.marker(fromCoords).addTo(map).bindPopup(`📍 From: ${b.from_city}`);
-              if (toCoords) L.marker(toCoords).addTo(map).bindPopup(`🏁 To: ${b.to_city}`);
-
-              if (fromCoords && toCoords) {
-                const group = L.featureGroup([L.marker(fromCoords), L.marker(toCoords)]);
-                map.fitBounds(group.getBounds(), { padding: [50, 50] });
-              }
+        return (
+          <div
+            key={b.id || i}
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: "10px",
+              padding: "10px",
+              marginBottom: "20px",
+              backgroundColor:
+                b.status === "Completed" ? "#e0ffe0" : b.status === "Accepted" ? "#fff7cc" : "#ffeaea",
             }}
           >
-            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          </MapContainer>
+            <b>
+              {b.from_city} ➡ {b.to_city}
+            </b>
+            <br />
+            🏷️ Load: {b.load}
+            <br />
+            🕒 Status: <b>{b.status}</b>
+            <br />
 
-          {/* Actions */}
-          <div style={{ marginTop: "10px" }}>
-            {profile.role === "Driver" && b.status === "Pending" && (
-              <button onClick={() => acceptBooking(b.id)}>✅ Accept Booking</button>
+            {/* Customer details for driver */}
+            {profile.role === "Driver" && b.status === "Accepted" && b.customer_full_name && (
+              <div style={{ marginTop: "8px" }}>
+                👤 <b>Customer:</b> {b.customer_full_name} ({b.customer_contact})
+                <br />
+                <button onClick={() => handleCall(b.customer_contact)}>📞 Call</button>{" "}
+                <button onClick={() => handleWhatsApp(b.customer_contact, b.customer_full_name)}>💬 WhatsApp</button>
+              </div>
             )}
-            {profile.role === "Driver" && b.status === "Accepted" && (
-              <button onClick={() => completeBooking(b.id)}>🏁 Mark Completed</button>
+
+            {/* Driver details for customer */}
+            {profile.role === "Customer" && b.status === "Accepted" && b.driver_full_name && (
+              <div style={{ marginTop: "8px" }}>
+                🚚 <b>Driver:</b> {b.driver_full_name} ({b.driver_contact})
+                <br />
+                🪪 License: {b.license_number}
+                <br />
+                🚛 Vehicle: {b.vehicle_number} ({b.vehicle_capacity} tons)
+                <br />
+                <button onClick={() => handleCall(b.driver_contact)}>📞 Call</button>{" "}
+                <button onClick={() => handleWhatsApp(b.driver_contact, b.driver_full_name)}>💬 WhatsApp</button>
+              </div>
             )}
+
+            {/* Per-booking map */}
+            <MapContainer
+              center={[20.5937, 78.9629]}
+              zoom={5}
+              style={{ height: "250px", width: "100%", marginTop: "10px" }}
+              whenCreated={async (map) => {
+                const fromCoords = await getCoordinates(b.from_city);
+                const toCoords = await getCoordinates(b.to_city);
+
+                if (fromCoords) L.marker(fromCoords).addTo(map).bindPopup(`📍 From: ${b.from_city}`);
+                if (toCoords) L.marker(toCoords).addTo(map).bindPopup(`🏁 To: ${b.to_city}`);
+
+                if (fromCoords && toCoords) {
+                  const group = L.featureGroup([L.marker(fromCoords), L.marker(toCoords)]);
+                  map.fitBounds(group.getBounds(), { padding: [50, 50] });
+                }
+              }}
+            >
+              <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+              {/* Live driver marker: react-leaflet Marker updates when driverLocations changes */}
+              {b.status === "Accepted" && driverLoc && driverLoc.latitude && driverLoc.longitude && (
+                <Marker position={[driverLoc.latitude, driverLoc.longitude]}>
+                  <Popup>
+                    🚚 <b>{driverLoc.profiles?.full_name || "Driver"}</b>
+                    <br />
+                    ⏱ {new Date(driverLoc.updated_at).toLocaleString()}
+                  </Popup>
+                </Marker>
+              )}
+            </MapContainer>
+
+            {/* Actions */}
+            <div style={{ marginTop: "10px" }}>
+              {profile.role === "Driver" && b.status === "Pending" && (
+                <button onClick={() => acceptBooking(b.id)}>✅ Accept Booking</button>
+              )}
+              {profile.role === "Driver" && b.status === "Accepted" && (
+                <button onClick={() => completeBooking(b.id)}>🏁 Mark Completed</button>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
