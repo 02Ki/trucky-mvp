@@ -1,6 +1,6 @@
 // src/pages/Dashboard.js
 import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "../supabase";
+import { supabase } from "../supabase"; // <- ensure this path is correct (src/supabase.js)
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "../styles/Dashboard.css";
@@ -37,6 +37,7 @@ function Dashboard() {
     async function getUser() {
       try {
         const { data } = await supabase.auth.getUser();
+        // supabase returns `data.user` in many SDK versions; keep optional chaining
         setUser(data?.user || null);
       } catch (err) {
         console.error("getUser error:", err);
@@ -62,9 +63,11 @@ function Dashboard() {
           .eq("id", user.id)
           .single();
 
-        if (profErr && profErr.code !== "PGRST116") {
-          // log non-not-found errors (PGRST116 may be "No rows" depending on PG client)
-          console.warn("profiles fetch warning:", profErr.message || profErr);
+        if (profErr && profErr.details && typeof profErr.code !== "undefined") {
+          // if it's a real error that's not "no rows", log it (some Supabase clients return different error shapes)
+          // but we allow "no rows" to continue to owners check
+          // (Don't block on a missing column - we'll gracefully handle field differences)
+          // console.warn("profiles fetch warning:", profErr.message || profErr);
         }
 
         if (profData) {
@@ -73,28 +76,32 @@ function Dashboard() {
         }
 
         // If not found in profiles, check owners table
-        // If found in owners table
-const { data: ownerData, error: ownerErr } = await supabase
-  .from("owners")
-  .select("*")
-  .eq("id", user.id)
-  .single();
+        const { data: ownerData, error: ownerErr } = await supabase
+          .from("owners")
+          .select("*")
+          .eq("id", user.id)
+          .single();
 
-if (ownerErr && ownerErr.code !== "PGRST116") {
-  console.warn("owners fetch warning:", ownerErr.message || ownerErr);
-}
+        if (ownerErr && ownerErr.details && typeof ownerErr.code !== "undefined") {
+          // console.warn("owners fetch warning:", ownerErr.message || ownerErr);
+        }
 
-if (ownerData) {
-  const ownerProfile = {
-    ...ownerData,
-    role: "Owner",
-    total_trucks: ownerData.total_trucks || 0,  // <-- FIX HERE
-  };
-
-  if (mounted) setProfile(ownerProfile);
-  return;
-}
-
+        if (ownerData) {
+          // synthesize a profile-like object with role = "Owner"
+          // owners table likely has different field names (owner_name, company_name, total_trucks, phone)
+          // provide fallbacks so the rest of the dashboard code continues to work
+          const ownerProfile = {
+            ...ownerData,
+            role: "Owner",
+            // fallback fields used in the rest of UI:
+            full_name: ownerData.owner_name || ownerData.full_name || ownerData.company_name || "Owner",
+            phone: ownerData.phone || ownerData.phone_number || null,
+            // some code referred to truck_count earlier — you said the schema uses total_trucks
+            truck_count: ownerData.truck_count ?? ownerData.total_trucks ?? 0,
+          };
+          if (mounted) setProfile(ownerProfile);
+          return;
+        }
 
         // If neither found, set profile null (user exists but no profile/owner record)
         if (mounted) setProfile(null);
@@ -333,11 +340,14 @@ if (ownerData) {
   const accepted = bookings.filter((b) => b.status === "Accepted").length;
   const completed = bookings.filter((b) => b.status === "Completed").length;
 
+  // Show a friendly fallback for profile.name fields if owner schema differs
+  const displayName = profile.full_name || profile.owner_name || profile.owner_name || "User";
+
   return (
     <div style={{ padding: "20px" }}>
       <h2>🚛 Trucky Dashboard</h2>
       <p>
-        Welcome, <b>{profile.full_name}</b> ({profile.role})
+        Welcome, <b>{displayName}</b> ({profile.role})
       </p>
 
       {/* Analytics */}

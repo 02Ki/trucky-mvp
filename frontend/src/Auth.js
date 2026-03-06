@@ -135,95 +135,184 @@ export default function Auth() {
 
   return (
     <div className="auth-container">
-      <h2>{isLogin ? "Login" : "Sign Up"} to Trucky</h2>
+      <div className="auth-card">
+        <div className="auth-header">
+          <h2>{isLogin ? "🔐 Login" : "✍️ Sign Up"}</h2>
+          <p>{isLogin ? "Welcome back to Trucky" : "Join Trucky as a partner"}</p>
+        </div>
 
-      <input type="email" placeholder="Email"
-        value={email} onChange={(e) => setEmail(e.target.value)}
-      />
-      <input type="password" placeholder="Password"
-        value={password} onChange={(e) => setPassword(e.target.value)}
-      />
+        <form className="auth-form" onSubmit={(e) => { e.preventDefault(); handleAuth(); }}>
+          {/* Basic Fields - Always shown */}
+          <div className="form-row">
+            <div className="form-group">
+              <label>Email Address</label>
+              <input 
+                type="email" 
+                placeholder="your@email.com"
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Password</label>
+              <input 
+                type="password" 
+                placeholder="••••••••"
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          </div>
 
-      {!isLogin && (
-        <>
-          {/* Role selector */}
-          <label>Sign up as:</label>
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="Customer">Customer</option>
-            <option value="Driver">Driver</option>
-            <option value="Owner">Owner</option>
-          </select>
-
-          {/* Common phone field */}
-          <input type="text" placeholder="Phone Number"
-            value={phone} onChange={(e) => setPhone(e.target.value)}
-          />
-
-          {/* DRIVER FIELDS */}
-          {role === "Driver" && (
+          {!isLogin && (
             <>
-              <input type="text" placeholder="Driving License"
-                value={drivingLicense}
-                onChange={(e) =>
-                  setDrivingLicense(e.target.value.toUpperCase())
-                }
-              />
+              {/* Role Selector */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Sign up as:</label>
+                  <select 
+                    value={role} 
+                    onChange={(e) => setRole(e.target.value)}
+                    className="role-select"
+                  >
+                    <option value="Customer">👤 Customer</option>
+                    <option value="Driver">🚗 Driver</option>
+                    <option value="Owner">🏢 Owner</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Phone Number</label>
+                  <input 
+                    type="tel" 
+                    placeholder="+91 98765 43210"
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
 
-              <input type="text" placeholder="Vehicle Number"
-                value={vehicleNumber}
-                onChange={(e) =>
-                  setVehicleNumber(e.target.value.toUpperCase())
-                }
-              />
+              {/* DRIVER FIELDS */}
+              {role === "Driver" && (
+                <div className="role-container driver-fields">
+                  <h3 className="role-title">🚗 Driver Information</h3>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Driving License</label>
+                      <input 
+                        type="text" 
+                        placeholder="DL12345678901234"
+                        value={drivingLicense}
+                        onChange={(e) => setDrivingLicense(e.target.value.toUpperCase())}
+                        required
+                      />
+                      <small>Format: DL12345678901234</small>
+                    </div>
+                    <div className="form-group">
+                      <label>Vehicle Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="MH01AB1234"
+                        value={vehicleNumber}
+                        onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group full-width">
+                      <label>Vehicle Capacity (tons)</label>
+                      <input 
+                        type="number" 
+                        placeholder="20"
+                        value={vehicleCapacity}
+                        onChange={(e) => setVehicleCapacity(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              <input type="text" placeholder="Vehicle Capacity (tons)"
-                value={vehicleCapacity}
-                onChange={(e) => setVehicleCapacity(e.target.value)}
-              />
+              {/* OWNER FIELDS */}
+              {role === "Owner" && (
+                <div className="role-container owner-fields">
+                  <h3 className="role-title">🏢 Company Information</h3>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Company Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="Trucky Logistics"
+                        value={companyName} 
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>GST Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="27AABCT1234H1Z0"
+                        value={gstNumber} 
+                        onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Number of Trucks</label>
+                      <input 
+                        type="number" 
+                        placeholder="5"
+                        value={truckCount} 
+                        onChange={(e) => setTruckCount(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Company Address</label>
+                      <textarea
+                        placeholder="123 Business St, Mumbai..."
+                        value={companyAddress}
+                        onChange={(e) => setCompanyAddress(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
-          {/* OWNER FIELDS */}
-          {role === "Owner" && (
-            <>
-              <input type="text" placeholder="Company Name"
-                value={companyName} onChange={(e) => setCompanyName(e.target.value)}
-              />
-
-              <input type="text" placeholder="GST Number"
-                value={gstNumber} onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
-              />
-
-              <input type="number" placeholder="Number of Trucks"
-                value={truckCount} onChange={(e) => setTruckCount(e.target.value)}
-              />
-
-              <textarea
-                placeholder="Company Address"
-                value={companyAddress}
-                onChange={(e) => setCompanyAddress(e.target.value)}
-              />
-            </>
+          {/* Message Display */}
+          {message && (
+            <div className={message.startsWith("❌") ? "alert alert-error" : "alert alert-success"}>
+              {message}
+            </div>
           )}
-        </>
-      )}
 
-      <button onClick={handleAuth}>
-        {isLogin ? "Login" : "Sign Up"}
-      </button>
+          {/* Submit Button */}
+          <button type="submit" className="auth-submit-btn">
+            {isLogin ? "🔓 Login to Trucky" : "✨ Create Account"}
+          </button>
 
-      {message && (
-        <p className={message.startsWith("❌") ? "error" : "success"}>
-          {message}
-        </p>
-      )}
-
-      <p>
-        {isLogin ? "Don't have an account?" : "Already registered?"}
-        <button className="switch-btn" onClick={() => setIsLogin(!isLogin)}>
-          {isLogin ? "Sign Up" : "Login"}
-        </button>
-      </p>
+          {/* Toggle Button */}
+          <div className="auth-toggle">
+            <span>{isLogin ? "Don't have an account?" : "Already have an account?"}</span>
+            <button 
+              type="button"
+              className="auth-toggle-btn" 
+              onClick={() => setIsLogin(!isLogin)}
+            >
+              {isLogin ? "Sign Up Now" : "Login Here"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
